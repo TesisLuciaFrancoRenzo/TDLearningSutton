@@ -11,6 +11,10 @@ package tdlearningsutton;
  */
 public class Test {
 
+    /**
+     *
+     * @param args
+     */
     public static void main(String[] args) {
         Double caca = 2 + 3d + Double.NaN;
         System.out.println(caca);

@@ -90,31 +90,39 @@ package tdlearningsutton;
  */
 public class TDLearningOriginal {
 
-    // Experimental Parameters:
-    final int inputUnits, hiddenUnits, outputUnits; // number of inputs, hidden, and output units
-    final int time_steps; // number of time steps to simulate
-    double biasInputStrenght; // strength of the bias (constant input) contribution
+    /**
+     * @param args the command line arguments
+     */
+    public static void main(String[] args) {
+        TDLearningOriginal tdLearnind = new TDLearningOriginal(16, 16, 1, 20, 1, 0.1, 0.1, 0.9, 0.7);
+        tdLearnind.learn();
+    }
     double alpha; // 1st layer learning rate (typically 1/inputUnits)
     double beta; // 2nd layer learning rate (typically 1/hiddenUnits)
+    double biasInputStrenght; // strength of the bias (constant input) contribution
+    final double[] error; // TD error
     double gamma; // discount-rate parameter (typically 0.9)
-    double lambda; // trace decay parameter (should be <= gamma)
-
+    final double[] hiddenLayer; // hidden layer
+    final double[][][] hiddenTrace; // hidden trace
+    final int hiddenUnits; 
     // Network Data Structure:
     final double[][] input; // input data (units)
-    final double[] hiddenLayer; // hidden layer
-    final double[] outputLayer; // output layer
-    final double[][] outputWeights; // weights
+    // Experimental Parameters:
+    final int inputUnits;
     final double[][] inputWeights; // weights
+    double lambda; // trace decay parameter (should be <= gamma)
 
     // Learning Data Structure:
     final double[] old_outputLayer;
-    final double[][][] hiddenTrace; // hidden trace
+    final double outputDerivatedFnet; // for temporal calculations
+    final double[] outputLayer; // output layer
     final double[][] outputTrace; // output trace
+    final int outputUnits; // number of inputs, hidden, and output units
+    final double[][] outputWeights; // weights
     final double[][] reward;// reward
-    final double[] error; // TD error
-    final double[] outputDerivatedFnet; // for temporal calculations
 
     int t; // current time step
+    final int time_steps; // number of time steps to simulate
 
     /**
      * Setup the training constants
@@ -158,44 +166,29 @@ public class TDLearningOriginal {
     }
 
     /**
-     * @param args the command line arguments
+     * Compute hidden layer and output predictions
      */
-    public static void main(String[] args) {
-        TDLearningOriginal tdLearnind = new TDLearningOriginal(16, 16, 1, 20, 1, 0.1, 0.1, 0.9, 0.7);
-        tdLearnind.learn();
-    }
-
-    /**
-     * Train the neural network
-     */
-    public void learn() {
-        int outputUnit;
-        initNetwork();
-        t = 0; // No learning on time step 0
-
-        computeOutputs(); // Just compute old response (old_y)...
-
-        for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
-            old_outputLayer[outputUnit] = outputLayer[outputUnit];
+    public void computeOutputs() {
+        
+        hiddenLayer[hiddenUnits] = biasInputStrenght;
+        input[t][inputUnits] = biasInputStrenght;
+        
+        for ( int hiddenUnit = 0; hiddenUnit < hiddenUnits; hiddenUnit++ ) {
+            hiddenLayer[hiddenUnit] = 0.0;
+            for ( int inputUnit = 0; inputUnit <= inputUnits; inputUnit++ ) {
+                hiddenLayer[hiddenUnit] += input[t][inputUnit] * inputWeights[inputUnit][hiddenUnit];
+            }
+            hiddenLayer[hiddenUnit] = 1.0 / (1.0 + Math.exp(-hiddenLayer[hiddenUnit])); // asymmetric sigmoid
         }
-        updateEligibilities(); // ...and prepare the eligibilities
-
-        for ( t = 1; t <= time_steps; t++ ) { // a single pass through time series data
-            computeOutputs(); // forward pass - compute activities
-
-            for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
-                error[outputUnit] = reward[t][outputUnit] + gamma * outputLayer[outputUnit] - old_outputLayer[outputUnit]; // form errors
+        for ( int outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
+            outputLayer[outputUnit] = 0.0;
+            for ( int hiddenUnit = 0; hiddenUnit <= hiddenUnits; hiddenUnit++ ) {
+                outputLayer[outputUnit] += hiddenLayer[hiddenUnit] * outputWeights[hiddenUnit][outputUnit];
             }
+            outputLayer[outputUnit] = 1.0 / (1.0 + Math.exp(-outputLayer[outputUnit])); // asymmetric sigmoid (OPTIONAL)
+        }
+    }// end computeOutputs
 
-            updateWeights(); // backward pass - learning
-            computeOutputs(); // forward pass must be done twice to form TD errors
-            for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
-                old_outputLayer[outputUnit] = outputLayer[outputUnit]; // for use in next cycle's TD errors
-            }
-            updateEligibilities(); // update eligibility traces
-
-        } // end t
-    }
 
     /**
      * Initialize weights and biases
@@ -220,44 +213,38 @@ public class TDLearningOriginal {
         }
     }// end initNetwork
 
-    /**
-     * Compute hidden layer and output predictions
-     */
-    public void computeOutputs() {
-
-        hiddenLayer[hiddenUnits] = biasInputStrenght;
-        input[t][inputUnits] = biasInputStrenght;
-
-        for ( int hiddenUnit = 0; hiddenUnit < hiddenUnits; hiddenUnit++ ) {
-            hiddenLayer[hiddenUnit] = 0.0;
-            for ( int inputUnit = 0; inputUnit <= inputUnits; inputUnit++ ) {
-                hiddenLayer[hiddenUnit] += input[t][inputUnit] * inputWeights[inputUnit][hiddenUnit];
-            }
-            hiddenLayer[hiddenUnit] = 1.0 / (1.0 + Math.exp(-hiddenLayer[hiddenUnit])); // asymmetric sigmoid
-        }
-        for ( int outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
-            outputLayer[outputUnit] = 0.0;
-            for ( int hiddenUnit = 0; hiddenUnit <= hiddenUnits; hiddenUnit++ ) {
-                outputLayer[outputUnit] += hiddenLayer[hiddenUnit] * outputWeights[hiddenUnit][outputUnit];
-            }
-            outputLayer[outputUnit] = 1.0 / (1.0 + Math.exp(-outputLayer[outputUnit])); // asymmetric sigmoid (OPTIONAL)
-        }
-    }// end computeOutputs
 
     /**
-     * Update weight vectors
+     * Train the neural network
      */
-    public void updateWeights() {
-        for ( int outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
-            for ( int hiddenUnit = 0; hiddenUnit <= hiddenUnits; hiddenUnit++ ) {
-                outputWeights[hiddenUnit][outputUnit] += beta * error[outputUnit] * outputTrace[hiddenUnit][outputUnit];
-                for ( int inputUnit = 0; inputUnit <= inputUnits; inputUnit++ ) {
-                    inputWeights[inputUnit][hiddenUnit] += alpha * error[outputUnit] * hiddenTrace[inputUnit][hiddenUnit][outputUnit];
-                }
-            }
+    public void learn() {
+        int outputUnit;
+        initNetwork();
+        t = 0; // No learning on time step 0
+        
+        computeOutputs(); // Just compute old response (old_y)...
+        
+        for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
+            old_outputLayer[outputUnit] = outputLayer[outputUnit];
         }
-    }// end updateWeights
-
+        updateEligibilities(); // ...and prepare the eligibilities
+        
+        for ( t = 1; t <= time_steps; t++ ) { // a single pass through time series data
+            computeOutputs(); // forward pass - compute activities
+            
+            for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
+                error[outputUnit] = reward[t][outputUnit] + gamma * outputLayer[outputUnit] - old_outputLayer[outputUnit]; // form errors
+            }
+            
+            updateWeights(); // backward pass - learning
+            computeOutputs(); // forward pass must be done twice to form TD errors
+            for ( outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
+                old_outputLayer[outputUnit] = outputLayer[outputUnit]; // for use in next cycle's TD errors
+            }
+            updateEligibilities(); // update eligibility traces
+            
+        } // end t
+    }
     /**
      * Calculate new weight eligibilities
      */
@@ -281,5 +268,19 @@ public class TDLearningOriginal {
             }
         }
     }// end updateEligibilities
+
+    /**
+     * Update weight vectors
+     */
+    public void updateWeights() {
+        for ( int outputUnit = 0; outputUnit < outputUnits; outputUnit++ ) {
+            for ( int hiddenUnit = 0; hiddenUnit <= hiddenUnits; hiddenUnit++ ) {
+                outputWeights[hiddenUnit][outputUnit] += beta * error[outputUnit] * outputTrace[hiddenUnit][outputUnit];
+                for ( int inputUnit = 0; inputUnit <= inputUnits; inputUnit++ ) {
+                    inputWeights[inputUnit][hiddenUnit] += alpha * error[outputUnit] * hiddenTrace[inputUnit][hiddenUnit][outputUnit];
+                }
+            }
+        }
+    }// end updateWeights
 
 }
